@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>STOCK MARKET ANALYSIS AND PRICE PREDICTION</title>
+  <link rel="stylesheet" href="{{ url_for('static',filename='dash.css')}}">
+</head>
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const loader = document.getElementById('loader');
+    // Show loader when Back button is clicked
+    const backBtn = document.querySelector('a[href="{{ url_for('dashboard1') }}"]');
+    if(backBtn && loader) {
+      backBtn.addEventListener('click', function() {
+        loader.style.display = 'flex';
+      });
+    }
+    // Show loader when AI/ML prediction form is submitted
+    const aiMlForm = document.getElementById('ai-ml-form');
+    if(aiMlForm && loader) {
+      aiMlForm.addEventListener('submit', function() {
+        loader.style.display = 'flex';
+      });
+    }
+    // Hide loader on page load (in case of back navigation)
+    if(loader) loader.style.display = 'none';
+  });
+</script>
+<body>
+  <div class="container">
+    <header>
+      <div class="navbar" style="display: flex; justify-content: flex-end;">
+        <a href="{{ url_for('login') }}">Logout</a>
+      </div>
+      <div class="navbar" style="display: flex; justify-content: flex-begin;">
+        <a href="{{ url_for('dashboard1') }}">Back</a>
+      </div>
+      <h1>STOCK MARKET ANALYSIS AND PRICE PREDICTION</h1>
+    </header> 
+    <main>
+      <div id="loader" style="display:none; justify-content:center; align-items:center; position:fixed; left:0; top:0; width:100vw; height:100vh; background:#222; z-index:9999;">
+        <div style="display:flex; flex-direction:column; align-items:center;">
+          <span class="loader-text">loading</span>
+          <div class="bar-loader">
+            <div class="bar"></div>
+          </div>
+        </div>
+      </div>
+
+{% if results %}
+  {% for res in results %}
+    <div style="margin-bottom:40px;">
+      <h2>Analysis for {{ res.symbol }}</h2>
+      {% if res.error %}
+        <p style="color:red;">{{ res.error }}</p>
+      {% else %}
+            {% if res.plot_html %}
+        {{ res.plot_html | safe }}
+      {% endif %}
+      <!-- Stock Info Card Format -->
+      <div style="display: flex; gap: 32px; margin: 24px 0; justify-content: center;">
+        <div style="background: #f6f6fa; border-radius: 12px; padding: 18px 32px; min-width: 180px;">
+          <div style="color: #888; font-size: 15px;">Current Price</div>
+          <div style="font-size: 22px; font-weight: bold; color: #222;">
+            {% if res.current_price is defined %}{{ res.current_price }}{% else %}N/A{% endif %}
+          </div>
+        </div>
+        <div style="background: #f6f6fa; border-radius: 12px; padding: 18px 32px; min-width: 180px;">
+          <div style="color: #888; font-size: 15px;">52-Week High</div>
+          <div style="font-size: 22px; font-weight: bold; color: #222;">
+            {% if res.high_52week is defined %}{{ res.high_52week }}{% else %}N/A{% endif %}
+          </div>
+        </div>
+        <div style="background: #f6f6fa; border-radius: 12px; padding: 18px 32px; min-width: 180px;">
+          <div style="color: #888; font-size: 15px;">52-Week Low</div>
+          <div style="font-size: 22px; font-weight: bold; color: #222;">
+            {% if res.low_52week is defined %}{{ res.low_52week }}{% else %}N/A{% endif %}
+          </div>
+        </div>
+        <div style="background: #f6f6fa; border-radius: 12px; padding: 18px 32px; min-width: 180px;">
+          <div style="color: #888; font-size: 15px;">Last Closing Price</div>
+          <div style="font-size: 22px; font-weight: bold; color: #222;">
+            {% if res.last_closing_price is defined %}{{ res.last_closing_price }}{% else %}N/A{% endif %}
+          </div>
+        </div>
+      </div>
+
+        <!-- Adjusted Close Predictions Table -->
+        <h3>Adjusted Close Predictions (rounded)</h3>
+        <table>
+          <tr>
+            <th>Days Out</th>
+            <th>Predicted Price</th>
+          </tr>
+          <tr>
+            <td>1 Day Out</td>
+            <td>{{ res.preds['1 Day Out'] }}</td>
+          </tr>
+          <tr>
+            <td>7 Days Out</td>
+            <td>{{ res.preds['7 Days Out'] }}</td>
+          </tr>
+          <tr>
+            <td>14 Days Out</td>
+            <td>{{ res.preds['14 Days Out'] }}</td>
+          </tr>
+        </table>
+
+        <!-- Predictions Break Down Table -->
+        <h3>Predictions Break Down</h3>
+        <table>
+          <tr>
+            <th>Training Score Mean</th>
+            <th>Testing Score Mean</th>
+          </tr>
+          <tr>
+            <td>{{ res.eval_table['Training Score Mean'] }}</td>
+            <td>{{ res.eval_table['Testing Score Mean'] }}</td>
+          </tr>
+        </table>
+
+        <!-- Normalized Stats Table -->
+        <h3>Normalized Stats</h3>
+        <table>
+          <tr>
+            <th>Mean</th>
+            <th>Median</th>
+            <th>STD</th>
+          </tr>
+          <tr>
+            <td>{{ res.norm_table['Mean'] }}</td>
+            <td>{{ res.norm_table['Median'] }}</td>
+            <td>{{ res.norm_table['STD'] }}</td>
+          </tr>
+        </table>
+      {% endif %}
+    </div>
+  {% endfor %}
+
+  <!-- Show Investment Risk Prediction table only once at the end -->
+  {% if adj_close_table and adj_close_table.rows %}
+    <h3>Investment Risk Prediction</h3>
+    <table>
+      <tr>
+        <th>Prediction Confidence</th>
+        {% for col in adj_close_table.header %}
+          <th>{{ col.date }}<br>{{ col.label }}</th>
+        {% endfor %}
+      </tr>
+      {% for row in adj_close_table.rows %}
+        <tr>
+          <td style="color:#00bfff; font-weight:bold; font-size:1.2em;">
+            {{ row.symbol }}<br>
+            <span style="font-size:1.5em;">{{ row.confidence }}</span>
+          </td>
+          {% for pred in row.preds %}
+            <td>
+              {{ pred.value }}<br>
+              <span style="font-size:0.9em; color:#aaa;">Action: {{ pred.action }}</span>
+            </td>
+          {% endfor %}
+        </tr>
+      {% endfor %}
+    </table>
+  {% endif %}
+{% endif %}
+<script>
+  document.addEventListener('DOMContentLoaded', function() {
+    const form = document.querySelector('form');
+    const loader = document.getElementById('loader');
+    const backBtn = document.querySelector('a[href="{{ url_for('dashboard1') }}"]');
+    // Show loader when Back button is clicked
+    if(backBtn && loader) {
+      backBtn.addEventListener('click', function() {
+        loader.style.display = 'flex';
+      });
+    }
+    // Hide loader on page load (in case of back navigation)
+    if(loader) loader.style.display = 'none';
+  });
+</script>
+  </div>
+</body>
+</html>

@@ -1,0 +1,46 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>STOCK MARKET ANALYSIS AND PRICE PREDICTION - Home</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='home.css') }}">
+</head>
+<body>
+  <header>
+    <div class="navbar">
+      <a href="{{ url_for('home') }}">Home</a>
+      <a href="{{ url_for('login') }}">Login</a>
+      <a href="{{ url_for('register') }}">Register</a>
+    </div>
+  </header>
+  <div class="logo-section">
+    <h1>STOCK MARKET ANALYSIS AND PRICE PREDICTION</h1>
+  </div>
+  <div class="demo-row">
+    <div class="demo-box">
+      <img src="{{ url_for('static', filename='Info-icon.jpg') }}" alt="Demo 1">
+      <div class="demo-title">Info</div>
+      <div class="demo-desc">Designed for modern investors, our stock market analysis application combines financial data, AI-driven predictions, and easy-to-read visualizations to help you navigate the market effectively.  Application will help you to investing in stock market and provide stock price prediction, Also helps in analyse the market trend and moveing avarage over stock price to make better investment plan.</div>
+    </div>
+    <div class="demo-box">
+      <img src="{{ url_for('static', filename='main-icon.jpg') }}" alt="Demo 2">
+      <div class="demo-title">Stock Market Investment</div>
+      <div class="demo-desc">The stock market is a platform where investors buy and sell shares of publicly listed companies. It serves as a key component of the free-market economy, enabling companies to raise capital and investors to earn returns.
+      <h3>Main stock markets in India</h3>
+      <dl>
+        <dt>NSE (National Stock Exchange)</dt> 
+        <dt>BSE (Bombay Stock Exchange)</dt>
+      </dl>
+      </div>
+    </div>  
+        <div class="demo-box">
+      <img src="{{ url_for('static', filename='about-icon.jpg') }}" alt="Demo 3">
+      <div class="demo-title">About</div>
+      <div class="demo-desc">We build this application to help the investor in stock market and to avoid loss making during investment </div>
+      <div class="demo-desc"> For feedback or any queries, please contact us at:
+        <a href="mailto:shashanksm75@gmail.com" style="color:rgb(17, 0, 255);">shashanksm75@gmail.com</a>
+      </div>
+    </div>
+</body>
+</html>

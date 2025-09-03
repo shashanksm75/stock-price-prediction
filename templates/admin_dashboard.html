@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Admin Dashboard</title>
+    <style>
+        table { border-collapse: collapse; width: 60%; margin: 20px auto; }
+        th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+        th { background: #eee; }
+        .logs { width: 60%; margin: 20px auto; background: #f9f9f9; padding: 10px; border: 1px solid #ccc; }
+        .delete-btn { color: red; border: none; background: none; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h2 style="text-align:center;">STOCK MARKET ANALYSIS AND PRICE PREDICTION </h2>
+    <h2 style="text-align:center;">Admin Dashboard</h2>
+    <h3 style="text-align:center;">All Users</h3>
+    <table>
+        <tr>
+            <th>Username</th>
+            <th>Email</th>
+            <th>Action</th>
+        </tr>
+        {% for user in users %}
+        <tr>
+            <td>{{ user[0] }}</td>
+            <td>{{ user[1] }}</td>
+            <td>
+                {% if user[0] != 'admin' %}
+                <form method="POST" action="{{ url_for('delete_user', username=user[0]) }}" style="display:inline;">
+                    <button type="submit" class="delete-btn" onclick="return confirm('Delete user {{ user[0] }}?')">Delete</button>
+                </form>
+                {% else %}
+                Admin
+                {% endif %}
+            </td>
+        </tr>
+        {% endfor %}
+    </table>
+    <h3 style="text-align:center;">Logs</h3>
+    <div class="logs">
+        {% for log in logs %}
+            <div>{{ log }}</div>
+        {% endfor %}
+    </div>
+        <!-- Place this inside your <body> or header section -->
+    <div style="text-align:right; margin:20px;">
+        <a href="{{ url_for('logout') }}" style="color:white; background:#d9534f; padding:8px 16px; border-radius:5px; text-decoration:none;">Logout</a>
+    </div>
+</body>
+</html>

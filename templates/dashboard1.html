@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>STOCK MARKET ANALYSIS AND PRICE PREDICTION-dashboard1</title>
+  <link rel="stylesheet" href="{{ url_for('static',filename='dash1.css')}}">
+</head>
+<body>
+  <div class="topbar">
+    <div class="topbar-title">STOCK MARKET ANALYSIS AND PRICE PREDICTION</div>
+    <a href="{{ url_for('logout') }}" class="topbar-logout">Logout</a>
+  </div>
+  <script>
+    document.addEventListener('DOMContentLoaded', function() {
+      var form = document.querySelector('.analyse-bar form');
+      if (form) {
+        form.addEventListener('submit', function() {
+          document.getElementById('loader').style.display = 'flex';
+        });
+      }
+    });
+  </script>
+  <div id="loader" style="display:none; justify-content:center; align-items:center; position:fixed; left:0; top:0; width:100vw; height:100vh; background:#222; z-index:9999;">
+    <div style="display:flex; flex-direction:column; align-items:center;">
+      <span class="loader-text">loading</span>
+      <div class="bar-loader">
+        <div class="bar"></div>
+      </div>
+    </div>
+  </div>
+  <div class="analyse-bar">
+    <form method="POST" action="{{ url_for('dashboard1') }}">
+      <label for="symbol" class="analyse-label">
+        <a>Enter Stock Symbols (comma separated, e.g., AAPL, TCS.NS, INFY):</a>
+      </label>
+      <div class="analyse-input-group">
+        <input type="text" id="symbol" name="symbol" required class="analyse-input">
+        <button type="submit" class="analyse-button">Analyze</button>
+      </div>
+    </form>
+  </div>
+
+  {% if stock and stock.ticker %}
+    <!-- Stock header and price info -->
+    <div class="stock-header" style="margin-bottom: 20px; text-align:left; max-width:900px; margin-left:end; margin-right:auto;">
+      <h2 style="font-weight:700; margin-bottom:0;">{{ stock.name }} ({{ stock.ticker }})</h2>
+      <div style="font-size:2.5rem; font-weight:700;">
+        {{ stock.close }}
+        <span style="color:red; font-size:1.5rem;">
+          {% if stock.close and stock.previous_close %}
+            {{ "%.2f"|format(stock.close - stock.previous_close) }}
+            ({{ "%.2f"|format(100*(stock.close - stock.previous_close)/stock.previous_close) }}%)
+          {% endif %}
+        </span>
+      </div>
+      <div style="color:#666; font-size:1rem;">
+        At close: {{ stock.date }} GMT+5:30
+      </div>
+    </div>
+
+    <!-- Period buttons -->
+    <div class="period-buttons" style="display:flex; gap:10px; margin-bottom:20px; justify-content:left; max-width:900px; margin-left:end; margin-right:auto;">
+      {% for p in ['1d','5d','1m','6m','ytd','1y','2y'] %}
+        <form method="get" action="{{ url_for('dashboard1') }}" style="display:inline;">
+          <input type="hidden" name="symbol" value="{{ stock.ticker }}">
+          <input type="hidden" name="period" value="{{ p }}">
+          <button type="submit"
+            style="padding:8px 18px; border:none; background:{{ 'deepskyblue' if period==p else '#eee' }};
+                   color:{{ 'white' if period==p else '#222' }};
+                   font-weight:600; border-radius:5px; cursor:pointer;">
+            {{ p|upper }}
+          </button>
+        </form>
+      {% endfor %}
+    </div>
+
+    <div style="width:100vw;max-width:100vw;margin:0;padding:0;">
+      {{ chart_html|safe }}
+    </div>
+
+    <div class="stats-bar stats-bar-row">
+      <div class="stat">
+        <div class="stat-label">Previous Close</div>
+        <div class="stat-value">{{ stock.previous_close }}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Day's Range</div>
+        <div class="stat-value">{{ stock.days_range }}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Market Cap (intraday)</div>
+        <div class="stat-value">{{ stock.market_cap }}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Earnings Date</div>
+        <div class="stat-value">{{ stock.earnings_date }}</div>
+      </div>
+    </div>
+    <div class="stats-bar stats-bar-row">
+      <div class="stat">
+        <div class="stat-label">Open</div>
+        <div class="stat-value">{{ stock.open }}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">52 Week Range</div>
+        <div class="stat-value">{{ stock.week_range }}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Beta (5Y Monthly)</div>
+        <div class="stat-value">{{ stock.beta }}</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Forward Dividend &amp; Yield</div>
+        <div class="stat-value">{{ stock.dividend_yield }}</div>
+      </div>
+    </div>
+    <table class="summary-table">
+      <tr>
+        <th>Bid</th>
+        <th>Ask</th>
+        <th>Volume</th>
+        <th>Avg. Volume</th>
+        <th>PE Ratio (TTM)</th>
+        <th>EPS (TTM)</th>
+        <th>Ex-Dividend Date</th>
+        <th>1y Target Est</th>
+      </tr>
+      <tr>
+        <td>{{ stock.bid }}</td>
+        <td>{{ stock.ask }}</td>
+        <td>{{ stock.volume }}</td>
+        <td>{{ stock.avg_volume }}</td>
+        <td>{{ stock.pe_ratio }}</td>
+        <td>{{ stock.eps }}</td>
+        <td>
+          {% if stock.ex_dividend_date != '--' and stock.ex_dividend_date %}
+            {{ stock.ex_dividend_date | datetimeformat('%b %d, %Y') }}
+          {% else %}
+            --
+          {% endif %}
+        </td>
+        <td>{{ stock.target_est }}</td>
+      </tr>
+    </table>
+    <div style="text-align:center; margin: 24px 0;">
+      <form id="ai-ml-form" method="GET" action="{{ url_for('dashboard') }}">
+        <input type="hidden" name="symbol" value="{{ stock.ticker }}">
+        <button type="submit" class="ai-ml-link">
+          Click here for <b>AI and ML Based prediction</b>
+        </button>
+      </form>
+    </div>
+    <!-- Show recent news -->
+    <div class="stock-news" style="max-width:900px;margin:32px auto 0 auto;">
+      <h2 style="color:#fff;">Recent News</h2>
+      {% if news %}
+        <ul style="list-style:none;padding:0;">
+          {% for item in news %}
+            <li style="margin-bottom:18px;">
+              <a href="{{ item.link }}" target="_blank" style="color:#00aaff;font-weight:bold;text-decoration:none;">
+                {{ item.title }}
+              </a>
+              <div style="color:#ccc;font-size:0.95em;">
+                {{ item.publisher }}{% if item.providerPublishTime %} &middot; {{ item.providerPublishTime | datetimeformat('%b %d, %Y %I:%M %p') }}{% endif %}
+              </div>
+              {% if item.summary %}
+                <div style="color:#bbb;font-size:0.98em;margin-top:2px;">{{ item.summary }}</div>
+              {% endif %}
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div style="color:#bbb;">No recent news found.</div>
+      {% endif %}
+    </div>
+  {% endif %}
+</body>
+</html>

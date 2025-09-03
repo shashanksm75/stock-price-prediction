@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>STOCK MARKET ANALYSIS AND PRICE PREDICTION</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='register.css') }}">
+</head>
+<body>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <script>
+        {% for category, message in messages %}
+          alert("{{ message }}");
+        {% endfor %}
+      </script>
+    {% endif %}
+  {% endwith %}
+    <header>
+    <div class="navbar">
+      <a href="{{ url_for('home') }}">Home</a>
+      <a href="{{ url_for('login') }}">Login</a>
+      <a href="{{ url_for('register') }}">Register</a>
+    </div>
+  </header>
+<div class="logo-section">
+    <h1>STOCK MARKET ANALYSIS AND PRICE PREDICTION</h1>
+  </div>
+  <main>
+    <div class="login-box">
+      <h2>Register</h2>
+        <form method="POST" action="{{ url_for('register') }}">
+        <label for="username">Username:</label>
+        <input type="text" id="username" name="username" required />
+      
+        <label for="email">Email:</label>
+        <input type="email" id="email" name="email" required />
+      
+        <label for="password">Password:</label>
+        <input type="password" id="password" name="password" required />
+      
+        <button type="submit" class="register-btn">Register</button>
+      </form>
+      <p class="footer-link">If you have already account: <a href="{{ url_for('login') }}">Login</a></p>
+    </div>
+
+  </main>
+</body>
+</html>
