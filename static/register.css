@@ -1,0 +1,127 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body, html {
+  height: 100%;
+  font-family:'Segoe UI', Arial, sans-serif;
+  background-image: url('/static/background-image.jpeg'); /* Replace with your own image path if needed */
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+}
+
+header {
+  background: linear-gradient(to right, green, orange);
+  text-align: center;
+  padding: 15px 0;
+  color: black;
+  font-weight: bold;
+}
+
+.logo-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 40px;
+  margin-bottom: -40px;
+  color: white;
+}
+.logo-section img {
+  width: 80px;
+  margin-bottom: 10px;
+}
+.logo-section h1 {
+  font-size: 2.5rem;
+  font-weight: bold;
+  margin: 0;
+  letter-spacing: 2px;
+}
+.logo-section p {
+  font-size: 1.2rem;
+  margin: 0;
+  color: #c0c8e0;
+}
+
+ .navbar {
+      background: rgba(0,0,0,0.4);
+      padding: 1rem 2rem;
+      display: flex;
+      gap: 2rem;
+      align-items: center;
+    }
+    .navbar a {
+      color: #fff;
+      text-decoration: none;
+      font-weight: 500;
+      font-size: 1.1rem;
+      transition: color 0.2s;
+    }
+    .navbar a:hover {
+      color: #ffd700;
+    }
+
+main {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 80%;
+}
+
+.login-box {
+  background: linear-gradient(to right,  #195907, #95970e);
+  padding: 25px;
+  border-radius: 14px;
+  height: 400px;
+  box-shadow: 0 0 10px #000;
+  width: 340px;
+  color: white;
+}
+
+.login-box h2 {
+  margin-bottom: 15px;
+}
+
+.login-box:hover {
+      transform: translateY(-8px) scale(1.03);
+      box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+    }
+
+.login-box label {
+  display: block;
+  margin: 10px 0 5px;
+}
+
+.login-box input {
+  width: 100%;
+  padding: 12px;
+  border: none;
+  margin-bottom: 10px;
+  border-radius: 4px;
+}
+
+.login-box button:hover {
+  color: #110235;
+}
+
+.register-btn {
+  width: 100%;
+  padding: 10px;
+  background-color: #007bff;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.footer-link {
+  margin-top: 10px;
+  font-size: 14px;
+}
+
+.footer-link a {
+  color:#101670;
+  text-decoration: none;
+}

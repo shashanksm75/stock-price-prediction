@@ -1,0 +1,114 @@
+body {
+  margin: 0;
+  padding: 0;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  /* Inherit the background image and style from login.css */
+  background: linear-gradient(rgba(10,30,80,0.85),rgba(10, 23, 54, 0.85)), url('/static/background-image.jpeg') no-repeat center center fixed;
+  background-size: cover;
+  color: #fff;
+  min-height: 100vh;
+}
+
+header {
+  background: linear-gradient(to right, green, orange);
+  text-align: center;
+  padding: 15px 0;
+  color: black;
+  font-weight: bold;
+}
+
+.navbar {
+  background: rgba(0,0,0,0.4);
+  padding: 1rem 2rem;
+  display: flex;
+  gap: 2rem;
+  align-items: center;
+}
+.navbar a {
+  color: #fff;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 1.1rem;
+  transition: color 0.2s;
+}
+.navbar a:hover {
+  color: #ffd700;
+}
+.logo-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-top: 40px;
+  margin-bottom: 40px;
+}
+.logo-section h1 {
+  font-size: 2.5rem;
+  font-weight: bold;
+  margin: 0;
+  letter-spacing: 2px;
+}
+.logo-section p {
+  font-size: 1.2rem;
+  margin: 0;
+  color: #c0c8e0;
+}
+.demo-row {
+  display: flex;
+  justify-content: center;
+  gap: 40px;
+  margin-top: 30px;
+  margin-bottom: 20px;
+}
+.demo-box {
+  background: rgba(255,255,255,0.07);
+  border-radius: 14px;
+  box-shadow: 0 4px 24px rgba(0,0,0,0.18);
+  overflow: hidden;
+  width: 380px;
+  height: 330px;
+  text-align: center;
+  transition: transform 0.2s, box-shadow 0.2s;
+  border: 2px solid rgba(255,255,255,0.13);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  padding-top: 20px;
+}
+.demo-box:hover {
+  transform: translateY(-8px) scale(1.03);
+  box-shadow: 0 8px 32px rgba(0,0,0,0.25);
+}
+.demo-box img {
+  width: 60px;
+  height: 60px;
+  border-radius: 30px;
+  object-fit: cover;
+  background:#fff;
+  margin-bottom: 10px;
+}
+.demo-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 10px 0 12px 0;
+  color: #fff;
+  letter-spacing: 1px;
+}
+.demo-desc {
+  font-size: 0.97rem;
+  color: #c0c8e0;
+  margin-bottom: 12px;
+  padding: 0 18px;
+}
+.demo-label {
+  margin-top: 10px;
+  font-size: 1.08rem;
+  color: #ffd700;
+  font-weight: 500;
+  letter-spacing: 1px;
+  margin-bottom: 18px;
+}
+@media (max-width: 1200px) {
+  .demo-row { flex-direction: column; align-items: center; }
+  .demo-box { width: 90vw; max-width: 400px; }
+}

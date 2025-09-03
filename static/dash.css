@@ -1,0 +1,122 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  height: 100%;
+  font-family: 'Segoe UI', Arial, sans-serif;
+  background: #111;
+  color: #fff;
+  text-align: center;
+}
+
+header {
+  background: linear-gradient(to right, green, orange);
+  text-align: center;
+  padding: 15px 0;
+  color: black;
+  font-weight: bold;
+}
+
+.navbar a {
+  color: #fff;
+  text-decoration: none;
+  font-weight: 550;
+  font-size: 1.1rem;
+  margin-left: 4rem;
+  margin-right: 30px;
+  margin-top: 10px;
+  margin-bottom: -20px;
+  transition: color 0.2s;
+}
+.navbar a:hover {
+  color: #ffd700;
+}
+
+h1 {
+  font-weight: bold;
+  font-size: 28px;
+  margin-top: -10px;
+  margin-bottom: 20px;
+  text-align: center;
+}
+
+main {
+  margin-top: 50px;
+}
+
+label {
+  font-size: 14px;
+  display: block;
+  margin-bottom: 10px;
+}
+
+input[type="text"] {
+  width: 400px;
+  padding: 10px;
+  font-size: 16px;
+}
+
+.add-button {
+  padding: 10px 20px;
+  background-color: orange;
+  color: white;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+}
+
+table {
+  width: 90%;
+  margin: 20px auto;
+  border-collapse: collapse;
+  background: #181818;
+  color: #fff;
+  font-size: 1rem;
+}
+th, td {
+  border: 1px solid #333;
+  padding: 8px 12px;
+  text-align: center;
+}
+th {
+  background: #222;
+  color: #00bfff;
+}
+tr:nth-child(even) {
+  background: #222;
+}
+
+.loader-text {
+  color: #b6aaff;
+  font-size: 1.1rem;
+  letter-spacing: 4px;
+  margin-bottom: 18px;
+}
+
+.bar-loader {
+  width: 120px;
+  height: 16px;
+  background: transparent; /* Changed from #222 to transparent */
+  border-radius: 8px;
+  overflow: hidden;
+  position: relative;
+}
+
+.bar {
+  height: 100%;
+  width: 40px;
+  background: #a18aff;
+  border-radius: 8px;
+  position: absolute;
+  left: -40px;
+  animation: slidebar 1.2s cubic-bezier(.4,0,.2,1) infinite;
+}
+
+@keyframes slidebar {
+  0% { left: -40px; }
+  60% { left: 80px; }
+  100% { left: 120px; }
+}
