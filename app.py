@@ -9,14 +9,52 @@ import os
 import sqlite3
 from flask import Flask, render_template, request, redirect, url_for, session, flash
 from werkzeug.security import generate_password_hash, check_password_hash 
-from sklearn.ensemble import RandomForestRegressor
+from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor
+from sklearn.preprocessing import StandardScaler
+from sklearn.model_selection import GridSearchCV, TimeSeriesSplit
+from scipy.stats import zscore
 from datetime import datetime, timedelta 
 from io import BytesIO
+from textblob import TextBlob
 import base64
 import plotly.graph_objs as go
 import plotly.io as pio
 import requests
 import plotly.express as px
+import csv
+
+def name_to_symbol_csv(company_name, csv_path=os.path.join(os.path.dirname(__file__), 'symbols.csv')):
+    company_name = company_name.strip().lower()
+    try:
+        with open(csv_path, newline='', encoding='utf-8') as csvfile:
+            reader = csv.DictReader(csvfile)
+            # Exact match (case-insensitive)
+            for row in reader:
+                if row['name'].strip().lower() == company_name:
+                    symbol = row['symbol'].replace('$', '').strip()
+                    return symbol
+            csvfile.seek(0)
+            next(reader)  # skip header
+            # Partial match (case-insensitive)
+            for row in reader:
+                if company_name in row['name'].strip().lower():
+                    symbol = row['symbol'].replace('$', '').strip()
+                    return symbol
+    except Exception as e:
+        print("CSV symbol lookup error:", e)
+    return None
+
+def get_valid_yf_symbol(symbol):
+    for sym_try in [symbol, symbol + '.NS', symbol + '.BO']:
+        try:
+            ticker = yf.Ticker(sym_try)
+            info = ticker.info
+            # If info dict has 'regularMarketPrice', it's a valid symbol
+            if info and info.get('regularMarketPrice', None) is not None:
+                return sym_try, ticker
+        except Exception:
+            continue
+    return None, None
 
 def generate_chart(df, period):
     fig = go.Figure()
@@ -55,6 +93,20 @@ def generate_chart(df, period):
         height=300
     )
     return fig.to_html(full_html=False)
+
+def fetch_sentiment(symbol):
+    news_items = fetch_news(symbol)
+    if not news_items:
+        return 0.0  # Neutral sentiment if no news
+    sentiments = []
+    for item in news_items:
+        headline = item.get('title', '') or ''
+        if headline:
+            blob = TextBlob(headline)
+            sentiments.append(blob.sentiment.polarity)
+    if sentiments:
+        return float(np.mean(sentiments))
+    return 0.0
 
 NEWSAPI_KEY = '0dcd7ffa3ba64dc6880f58e229a2b9e5'  # <-- Replace with your NewsAPI key
 
@@ -224,47 +276,122 @@ def dashboard1():
     if 'user' not in session:
         return redirect(url_for('login'))
 
-    symbol = request.args.get('symbol')
     period = request.args.get('period', '1d')
+    raw_input = request.args.get('symbol', '').strip()
 
     if request.method == 'POST':
-        symbol = request.form.get('symbol', symbol)
+        raw_input = request.form.get('symbol', '').strip()
         period = request.form.get('period', period)
 
+    # Only process if a symbol is provided
+    if not raw_input:
+        return render_template('dashboard1.html', stock={}, period=period, news=[], chart_html="")
+
+    # Try to get symbol from CSV, else treat input as symbol
+    symbol = None
+    symbol_csv = name_to_symbol_csv(raw_input)
+    if symbol_csv:
+        symbol = symbol_csv.replace('$', '').strip()
+    else:
+        symbol = raw_input.replace('$', '').strip()
+
+    if not symbol:
+        flash("No matching stock symbol found for the entered company name or symbol.", "warning")
+        return render_template('dashboard1.html', stock={}, period=period, news=[], chart_html="")
+
+    # Try all possible Yahoo Finance symbol formats
+    possible_symbols = [symbol]
+    if not symbol.endswith('.NS') and not symbol.endswith('.BO'):
+        possible_symbols.append(symbol + '.NS')
+        possible_symbols.append(symbol + '.BO')
+
+    valid_symbol = None
+    ticker = None
+    for sym_try in possible_symbols:
+        try:
+            ticker_try = yf.Ticker(sym_try)
+            info = ticker_try.info
+            # If info dict has 'regularMarketPrice', it's a valid symbol
+            if info and info.get('regularMarketPrice', None) is not None:
+                valid_symbol = sym_try
+                ticker = ticker_try
+                break
+        except Exception:
+            continue
+
+    if not valid_symbol or not ticker:
+        flash("No data available for the selected symbol. The stock may be delisted or not supported on Yahoo Finance.", "warning")
+        return render_template('dashboard1.html', stock={}, period=period, news=[], chart_html="")
+
+    news = fetch_news(valid_symbol)
     chart_html = ""
     stock_data = {}
-    news = []
     period_map = {
-        '1d': {'period': '1d', 'interval': '1m'},
-        '5d': {'period': '5d', 'interval': '5m'},
-        '1m': {'period': '1mo', 'interval': '1d'},
-        '6m': {'period': '6mo', 'interval': '1d'},
-        'ytd': {'period': 'ytd', 'interval': '1d'},
-        '1y': {'period': '1y', 'interval': '1d'},
-        '2y': {'period': '2y', 'interval': '1d'}
+        '1d': {'days': 1, 'interval': '1m'},
+        '5d': {'days': 5, 'interval': '5m'},
+        '1m': {'days': 30, 'interval': '1d'},
+        '6m': {'days': 182, 'interval': '1d'},
+        'ytd': {'days': 'ytd', 'interval': '1d'},
+        '1y': {'days': 365, 'interval': '1d'},
+        '2y': {'days': 730, 'interval': '1d'}
     }
 
-    if symbol:
-        news = fetch_news(symbol)
-        yf_args = period_map.get(period, period_map['1d'])
-        try:
+    try:
+        # For 1d and 5d, try intraday intervals
+        if period in ['1d', '5d']:
+            yf_args = period_map[period]
+            df = ticker.history(period=period, interval=yf_args['interval'])
+            if df.empty or 'Close' not in df.columns:
+                flash(f"No intraday data available for {period} period.", "warning")
+                return render_template('dashboard1.html', stock={}, period=period, news=news, chart_html="")
+            df = df.copy()
+            df.index = pd.to_datetime(df.index)
+            df = df.sort_index()
             if period == '1d':
-                ticker = yf.Ticker(symbol)
-                df = ticker.history(period=yf_args['period'], interval=yf_args['interval'])
-            elif period == '5d':
-                ticker = yf.Ticker(symbol)
-                df = ticker.history(period='5d', interval='5m')
-                df = df.copy()
-                df.index = pd.to_datetime(df.index)
-                df = df.sort_index()
-            
-                # Filter for market hours and weekdays only
-                df = df.between_time('09:30', '16:30')
-                df = df[df.index.dayofweek < 5]  # Monday=0, Sunday=6
-            
+                price_col = 'Adj Close' if 'Adj Close' in df.columns else 'Close'
                 fig = go.Figure()
-            
-                # Plot each day as a separate trace to avoid lines between days
+                fig.add_trace(go.Scatter(
+                    x=[t.strftime('%I:%M %p') for t in df.index],
+                    y=df[price_col],
+                    mode='lines',
+                    name=valid_symbol,
+                    customdata=np.stack([df['Open'], df['High'], df['Low'], df['Volume']], axis=-1),
+                    hovertemplate=
+                        'Time: %{x}<br>' +
+                        'Close: %{y:.2f}<br>' +
+                        'Open: %{customdata[0]:.2f}<br>' +
+                        'High: %{customdata[1]:.2f}<br>' +
+                        'Low: %{customdata[2]:.2f}<br>' +
+                        'Volume: %{customdata[3]:,}<extra></extra>'
+                ))
+                fig.update_layout(
+                    title=f'{valid_symbol.upper()} Intraday Chart (1D)',
+                    xaxis_title='Time',
+                    yaxis_title='Price',
+                    xaxis=dict(
+                        showgrid=False,
+                        tickformat='%I:%M %p',
+                        tickfont=dict(size=12),
+                        title=None,
+                        tickmode='array',
+                        tickvals=[df.index[i].strftime('%I:%M %p') for i in np.linspace(0, len(df.index)-1, 10, dtype=int)],
+                        tickangle=0
+                    ),
+                    yaxis=dict(
+                        showgrid=True,
+                        gridcolor='#f0f0f0',
+                        tickfont=dict(size=12),
+                        title=None
+                    ),
+                    template='plotly_white',
+                    margin=dict(l=30, r=30, t=30, b=30),
+                    height=450
+                )
+                chart_html = fig.to_html(full_html=False)
+            else:  # 5d
+                df = df.between_time('09:30', '16:30')
+                df = df[df.index.dayofweek < 5]
+                fig = go.Figure()
                 tickvals = []
                 ticktext = []
                 for date, group in df.groupby(df.index.date):
@@ -286,12 +413,10 @@ def dashboard1():
                                 'Low: %{customdata[2]:.2f}<br>' +
                                 'Volume: %{customdata[3]:,}<extra></extra>'
                         ))
-                        # For x-axis ticks: use market open time for each day
                         tickvals.append(group.index[0])
-                        ticktext.append(date.strftime('%b %d'))  # e.g., "Jul 19"
-            
+                        ticktext.append(date.strftime('%b %d'))
                 fig.update_layout(
-                    title=f'{symbol.upper()} 5-Day Intraday Chart',
+                    title=f'{valid_symbol.upper()} 5-Day Intraday Chart',
                     xaxis_title='Date',
                     yaxis_title='Price',
                     xaxis=dict(
@@ -302,8 +427,8 @@ def dashboard1():
                         tickfont=dict(size=12),
                         title=None,
                         rangebreaks=[
-                            dict(bounds=["sat", "mon"]),  # hide weekends
-                            dict(bounds=[16.5, 9.5], pattern="hour")  # hide non-market hours (4:30pm to 9:30am)
+                            dict(bounds=["sat", "mon"]),
+                            dict(bounds=[16.5, 9.5], pattern="hour")
                         ]
                     ),
                     yaxis=dict(
@@ -318,95 +443,62 @@ def dashboard1():
                     showlegend=False
                 )
                 chart_html = fig.to_html(full_html=False)
-            else:
-                ticker = yf.Ticker(symbol)
-                df = ticker.history(period=yf_args['period'], interval=yf_args['interval'])
-
+            last_row = df.iloc[-1]
+        else:
+            # For longer periods, always use daily data for 2 years and filter
+            df = ticker.history(period='2y', interval='1d')
             if df.empty or 'Close' not in df.columns:
-                flash("No data available for the selected period or symbol.", "warning")
+                flash("No data available for the selected period.", "warning")
                 return render_template('dashboard1.html', stock={}, period=period, news=news, chart_html="")
-
             df = df.copy()
             df.index = pd.to_datetime(df.index)
             df = df.sort_index()
-
-            if period == '1d':
-                price_col = 'Adj Close' if 'Adj Close' in df.columns else 'Close'
-                fig = go.Figure()
-                df['Time'] = df.index.time
-                fig.add_trace(go.Scatter(
-                    x=[t.strftime('%I:%M %p') for t in df.index],  # Format as "HH:MM AM/PM"
-                    y=df[price_col],
-                    mode='lines',
-                    name=symbol,
-                    customdata=np.stack([df['Open'], df['High'], df['Low'], df['Volume']], axis=-1),
-                    hovertemplate=
-                        'Time: %{x}<br>' +
-                        'Close: %{y:.2f}<br>' +
-                        'Open: %{customdata[0]:.2f}<br>' +
-                        'High: %{customdata[1]:.2f}<br>' +
-                        'Low: %{customdata[2]:.2f}<br>' +
-                        'Volume: %{customdata[3]:,}<extra></extra>'
-                ))
-                fig.update_layout(
-                    title=f'{symbol.upper()} Intraday Chart (1D)',
-                    xaxis_title='Time',
-                    yaxis_title='Price',
-                    xaxis=dict(
-                        showgrid=False,
-                        tickformat='%I:%M %p',  # AM/PM format
-                        tickfont=dict(size=12),
-                        title=None,
-                        tickmode='array',
-                        tickvals=[df.index[i].strftime('%I:%M %p') for i in np.linspace(0, len(df.index)-1, 10, dtype=int)],
-                        tickangle=0  # Horizontal labels
-                    ),
-                    yaxis=dict(
-                        showgrid=True,
-                        gridcolor='#f0f0f0',
-                        tickfont=dict(size=12),
-                        title=None
-                    ),
-                    template='plotly_white',
-                    margin=dict(l=30, r=30, t=30, b=30),
-                    height=450
-                )
-                chart_html = fig.to_html(full_html=False)
+            if period == 'ytd':
+                # Ensure start_of_year matches df.index timezone
+                tz = df.index.tz
+                start_of_year = pd.Timestamp(datetime.now().year, 1, 1, tz=tz)
+                df_period = df[df.index >= start_of_year]
             else:
-                chart_html = generate_chart(df, period)
-            
-            last_row = df.iloc[-1]
-            info = ticker.info
-            previous_close = round(float(df['Close'].iloc[-2]), 2) if len(df) > 1 else round(float(df['Close'].iloc[-1]), 2)
+                days = period_map[period]['days']
+                df_period = df[df.index >= (df.index.max() - pd.Timedelta(days=days))]
+            if df_period.empty or 'Close' not in df_period.columns:
+                flash("No data available for the selected period.", "warning")
+                return render_template('dashboard1.html', stock={}, period=period, news=news, chart_html="")
+            chart_html = generate_chart(df_period, period)
+            last_row = df_period.iloc[-1]
+            df = df_period
 
-            stock_data = {
-                'ticker': symbol,
-                'name': info.get('shortName', symbol),
-                'date': last_row.name.strftime('%m/%d %I:%M %p') if hasattr(last_row.name, 'strftime') else str(last_row.name),
-                'close': round(float(last_row['Close']), 2),
-                'open': round(float(last_row['Open']), 2),
-                'high': round(float(last_row['High']), 2),
-                'low': round(float(last_row['Low']), 2),
-                'volume': int(last_row['Volume']),
-                'previous_close': previous_close,
-                'days_range': f"{round(float(last_row['Low']), 2)} - {round(float(last_row['High']), 2)}",
-                'market_cap': f"{round(info.get('marketCap', 0)/1e12, 3)}T" if info.get('marketCap', 0) > 1e12 else f"{round(info.get('marketCap', 0)/1e9, 3)}B" if info.get('marketCap', 0) > 1e9 else str(info.get('marketCap', 'N/A')),
-                'earnings_date': info.get('earningsDate', 'N/A'),
-                'week_range': f"{round(float(df['Low'][-252:].min()), 2)} - {round(float(df['High'][-252:].max()), 2)}",
-                'beta': info.get('beta', 'N/A'),
-                'dividend_yield': f"{info.get('dividendRate', '--')} ({info.get('dividendYield', '--')})",
-                'bid': info.get('bid', '--'),
-                'ask': info.get('ask', '--'),
-                'avg_volume': info.get('averageVolume', '--'),
-                'pe_ratio': info.get('trailingPE', '--'),
-                'eps': info.get('trailingEps', '--'),
-                'ex_dividend_date': info.get('exDividendDate', '--'),
-                'target_est': info.get('targetMeanPrice', '--')
-            }
-            return render_template('dashboard1.html', stock=stock_data, period=period, news=news, chart_html=chart_html)
-        except Exception as e:
-            flash(f"Error fetching data: {str(e)}", "error")
-            return render_template('dashboard1.html', stock={}, period=period, news=news, chart_html="")
+        info = ticker.info
+        previous_close = round(float(df['Close'].iloc[-2]), 2) if len(df) > 1 else round(float(df['Close'].iloc[-1]), 2)
+
+        stock_data = {
+            'ticker': valid_symbol,
+            'name': info.get('shortName', valid_symbol),
+            'date': last_row.name.strftime('%m/%d %I:%M %p') if hasattr(last_row.name, 'strftime') else str(last_row.name),
+            'close': round(float(last_row['Close']), 2),
+            'open': round(float(last_row['Open']), 2),
+            'high': round(float(last_row['High']), 2),
+            'low': round(float(last_row['Low']), 2),
+            'volume': int(last_row['Volume']),
+            'previous_close': previous_close,
+            'days_range': f"{round(float(last_row['Low']), 2)} - {round(float(last_row['High']), 2)}",
+            'market_cap': f"{round(info.get('marketCap', 0)/1e12, 3)}T" if info.get('marketCap', 0) > 1e12 else f"{round(info.get('marketCap', 0)/1e9, 3)}B" if info.get('marketCap', 0) > 1e9 else str(info.get('marketCap', 'N/A')),
+            'earnings_date': info.get('earningsDate', 'N/A'),
+            'week_range': f"{round(float(df['Low'][-252:].min()), 2)} - {round(float(df['High'][-252:].max()), 2)}",
+            'beta': info.get('beta', 'N/A'),
+            'dividend_yield': f"{info.get('dividendRate', '--')} ({info.get('dividendYield', '--')})",
+            'bid': info.get('bid', '--'),
+            'ask': info.get('ask', '--'),
+            'avg_volume': info.get('averageVolume', '--'),
+            'pe_ratio': info.get('trailingPE', '--'),
+            'eps': info.get('trailingEps', '--'),
+            'ex_dividend_date': info.get('exDividendDate', '--'),
+            'target_est': info.get('targetMeanPrice', '--')
+        }
+        return render_template('dashboard1.html', stock=stock_data, period=period, news=news, chart_html=chart_html)
+    except Exception as e:
+        flash(f"Error fetching data: {str(e)}", "error")
+        return render_template('dashboard1.html', stock={}, period=period, news=news, chart_html="")
 
     return render_template('dashboard1.html', stock=stock_data, period=period, news=news, chart_html=chart_html)
 
@@ -430,7 +522,16 @@ def dashboard():
     symbol = request.args.get('symbol')
     symbols = []
     if request.method == 'POST':
-        symbols = [s.strip().upper() for s in request.form.get('symbol', '').split(',') if s.strip()]
+        raw_inputs = [s.strip() for s in request.form.get('symbol', '').split(',') if s.strip()]
+        symbols = []
+        for name in raw_inputs:
+            sym = name_to_symbol_csv(name)
+            if sym:
+                symbols.append(sym)
+            else:
+                flash(f"No matching stock symbol found for '{name}'.", "warning")
+        if not symbols:
+            return render_template('dashboard.html', results=[], symbols=[], adj_close_table=adj_close_table, error="No valid symbols found.")
     elif symbol:
         symbols = [symbol.strip().upper()]
 
@@ -441,6 +542,8 @@ def dashboard():
                 if df.empty or 'Close' not in df.columns:
                     results.append({'symbol': symbol, 'error': 'No data found or Close missing.'})
                     continue
+
+                # Feature Engineering
                 df['MA20'] = df['Close'].rolling(window=20).mean()
                 df['MA50'] = df['Close'].rolling(window=50).mean()
                 df['STD20'] = df['Close'].rolling(window=20).std()
@@ -448,60 +551,103 @@ def dashboard():
                 df['Lower'] = df['MA20'] - 2 * df['STD20']
                 df['Return'] = df['Close'].pct_change()
                 df['Volatility'] = df['Return'].rolling(window=10).std()
+                df['EMA12'] = df['Close'].ewm(span=12, adjust=False).mean()
+                df['EMA26'] = df['Close'].ewm(span=26, adjust=False).mean()
+                df['MACD'] = df['EMA12'] - df['EMA26']
+                delta = df['Close'].diff()
+                up = delta.clip(lower=0)
+                down = -1 * delta.clip(upper=0)
+                roll_up = up.rolling(14).mean()
+                roll_down = down.rolling(14).mean()
+                RS = roll_up / roll_down
+                df['RSI'] = 100.0 - (100.0 / (1.0 + RS))
+                # Momentum
+                df['Momentum'] = df['Close'] - df['Close'].shift(10)
+                # Lagged returns/prices
+                df['Lag1'] = df['Close'].shift(1)
+                df['Lag7'] = df['Close'].shift(7)
+                df['Lag14'] = df['Close'].shift(14)
+                # Fill missing values
+                df = df.fillna(method='bfill').fillna(method='ffill')
+                # Remove outliers (optional, using z-score)
+                df = df[(np.abs(zscore(df['Close'])) < 3)]
                 df = df.dropna()
 
-                feature_cols = ['MA20', 'MA50', 'STD20', 'Upper', 'Lower', 'Return', 'Volatility']
+                # Optionally, add sentiment from news headlines (stub)
+                
+                sentiment_score = fetch_sentiment(symbol)
+                df['Sentiment'] = sentiment_score  # Same value for all rows (stub)
+                
+                feature_cols = [
+                    'MA20', 'MA50', 'STD20', 'Upper', 'Lower', 'Return', 'Volatility',
+                    'EMA12', 'EMA26', 'MACD', 'RSI', 'Momentum', 'Lag1', 'Lag7', 'Lag14', 'Sentiment'
+                ]
+
+                feature_cols = [
+                    'MA20', 'MA50', 'STD20', 'Upper', 'Lower', 'Return', 'Volatility',
+                    'EMA12', 'EMA26', 'MACD', 'RSI', 'Momentum', 'Lag1', 'Lag7', 'Lag14'
+                ]
+                
                 X = df[feature_cols].values
                 y = df['Close'].values
 
-                train_size = int(len(df) * 0.85)
-                X_train, X_test = X[:train_size], X[train_size:]
-                y_train, y_test = y[:train_size], y[train_size:]
+                # Scale features
+                scaler = StandardScaler()
+                X_scaled = scaler.fit_transform(X)
 
-                rf = RandomForestRegressor(n_estimators=300, max_depth=10, random_state=42)
-                rf.fit(X_train, y_train)
+                # Multi-step prediction targets
+                y_1 = df['Close'].shift(-1).dropna().values
+                y_7 = df['Close'].shift(-7).dropna().values
+                y_14 = df['Close'].shift(-14).dropna().values
+
+                # Align X for multi-step
+                X_1 = X_scaled[:-1]
+                X_7 = X_scaled[:-7]
+                X_14 = X_scaled[:-14]
+
+                # Model selection and ensemble
+                tscv = TimeSeriesSplit(n_splits=5)
+                param_grid_rf = {'n_estimators': [100, 200], 'max_depth': [5, 10]}
+                param_grid_gb = {'n_estimators': [100, 200], 'max_depth': [3, 5]}
+
+                rf = RandomForestRegressor(random_state=42)
+                gb = GradientBoostingRegressor(random_state=42)
+
+                grid_rf_1 = GridSearchCV(rf, param_grid_rf, cv=tscv, scoring='neg_mean_squared_error', n_jobs=-1)
+                grid_gb_1 = GridSearchCV(gb, param_grid_gb, cv=tscv, scoring='neg_mean_squared_error', n_jobs=-1)
+                grid_rf_1.fit(X_1, y_1)
+                grid_gb_1.fit(X_1, y_1)
+
+                grid_rf_7 = GridSearchCV(rf, param_grid_rf, cv=tscv, scoring='neg_mean_squared_error', n_jobs=-1)
+                grid_gb_7 = GridSearchCV(gb, param_grid_gb, cv=tscv, scoring='neg_mean_squared_error', n_jobs=-1)
+                grid_rf_7.fit(X_7, y_7)
+                grid_gb_7.fit(X_7, y_7)
+
+                grid_rf_14 = GridSearchCV(rf, param_grid_rf, cv=tscv, scoring='neg_mean_squared_error', n_jobs=-1)
+                grid_gb_14 = GridSearchCV(gb, param_grid_gb, cv=tscv, scoring='neg_mean_squared_error', n_jobs=-1)
+                grid_rf_14.fit(X_14, y_14)
+                grid_gb_14.fit(X_14, y_14)
+
+                # Ensemble averaging
+                def ensemble_predict(models, X):
+                    return np.mean([m.predict(X) for m in models], axis=0)
+
+                # Prepare last row for prediction
+                last_features = df[feature_cols].iloc[-1].values.reshape(1, -1)
+                last_features_scaled = scaler.transform(last_features)
+
+                pred_1 = ensemble_predict([grid_rf_1.best_estimator_, grid_gb_1.best_estimator_], last_features_scaled)[0]
+                pred_7 = ensemble_predict([grid_rf_7.best_estimator_, grid_gb_7.best_estimator_], last_features_scaled)[0]
+                pred_14 = ensemble_predict([grid_rf_14.best_estimator_, grid_gb_14.best_estimator_], last_features_scaled)[0]
 
                 symbol_upper = symbol.upper()
-                if symbol_upper.endswith('.NS') or symbol_upper.endswith('.BSE') or symbol_upper in ['INFY', 'TCS', 'RELIANCE']:
-                    currency = '₹'
-                else:
-                    currency = '$'
+                currency = '₹' if symbol_upper.endswith('.NS') or symbol_upper.endswith('.BSE') or symbol_upper in ['INFY', 'TCS', 'RELIANCE'] else '$'
 
-                preds = {}
-                future_closes = list(map(float, df['Close'].values[-20:]))
-                future_returns = list(map(float, df['Return'].values[-10:]))
-
-                prediction_days = [1, 7, 14]
-                prediction_labels = ['1 Day Out', '7 Days Out', '14 Days Out']
-                current_index = 0
-                predicted_prices = []
-
-                for days, label in zip(prediction_days, prediction_labels):
-                    for _ in range(days - current_index):
-                        if len(future_closes) < 20:
-                            ma20 = np.mean(future_closes)
-                            std20 = np.std(future_closes)
-                        else:
-                            ma20 = np.mean(future_closes[-20:])
-                            std20 = np.std(future_closes[-20:])
-                        if len(future_closes) < 50:
-                            ma50 = np.mean(future_closes)
-                        else:
-                            ma50 = np.mean(future_closes[-50:])
-                        upper = ma20 + 2 * std20
-                        lower = ma20 - 2 * std20
-                        ret = (future_closes[-1] - future_closes[-2]) / future_closes[-2] if len(future_closes) > 1 else 0
-                        if len(future_returns) < 10:
-                            vol = np.std(future_returns)
-                        else:
-                            vol = np.std(future_returns[-10:])
-                        features = np.array([[float(ma20), float(ma50), float(std20), float(upper), float(lower), float(ret), float(vol)]])
-                        pred_price = float(rf.predict(features)[0])
-                        future_returns.append(float(ret))
-                        future_closes.append(float(pred_price))
-                    preds[label] = f"{currency}{round(pred_price, 2)}"
-                    predicted_prices.append(pred_price)
-                    current_index = days
+                preds = {
+                    '1 Day Out': f"{currency}{round(pred_1, 2)}",
+                    '7 Days Out': f"{currency}{round(pred_7, 2)}",
+                    '14 Days Out': f"{currency}{round(pred_14, 2)}"
+                }
 
                 last_close = round(df['Close'].iloc[-1], 2)
                 current_price = round(float(df['Close'].iloc[-1]), 2)
@@ -510,8 +656,8 @@ def dashboard():
                 last_closing_price = round(float(df['Close'].iloc[-2]), 2) if len(df) > 1 else current_price
 
                 eval_table = {
-                    'Training Score Mean': f"{round(rf.score(X_train, y_train)*100, 2)}%",
-                    'Testing Score Mean': f"{round(rf.score(X_test, y_test)*100, 2)}%"
+                    'RF Training Score': f"{round(grid_rf_1.best_estimator_.score(X_1, y_1)*100, 2)}%",
+                    'GB Training Score': f"{round(grid_gb_1.best_estimator_.score(X_1, y_1)*100, 2)}%"
                 }
                 norm_table = {
                     'Mean': f"{round(np.mean(df['Close']), 2)}",
@@ -545,10 +691,9 @@ def dashboard():
                         'Low: %{customdata[2]:.2f}<br>' +
                         'Volume: %{customdata[3]:,}<extra></extra>'
                 ))
-                last_date = df.index[-1]
-                future_dates = pd.bdate_range(last_date, periods=prediction_days[-1]+1)[prediction_days]
+                future_dates = pd.bdate_range(df.index[-1], periods=15)[[1,7,14]]
                 fig.add_trace(go.Scatter(
-                    x=future_dates, y=predicted_prices,
+                    x=future_dates, y=[pred_1, pred_7, pred_14],
                     mode='lines+markers', name='Predicted',
                     line=dict(color='red')
                 ))
@@ -599,7 +744,7 @@ def dashboard():
                 continue
 
             try:
-                score_str = res['eval_table']['Training Score Mean'].replace('%', '')
+                score_str = res['eval_table']['RF Training Score'].replace('%', '')
                 score = float(score_str)
             except Exception:
                 score = 0
