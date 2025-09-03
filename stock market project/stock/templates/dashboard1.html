@@ -10,6 +10,15 @@
     <div class="topbar-title">STOCK MARKET ANALYSIS AND PRICE PREDICTION</div>
     <a href="{{ url_for('logout') }}" class="topbar-logout">Logout</a>
   </div>
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+      <ul>
+      {% for category, message in messages %}
+        <li style="color: red;">{{ message }}</li>
+      {% endfor %}
+      </ul>
+    {% endif %}
+  {% endwith %}
   <script>
     document.addEventListener('DOMContentLoaded', function() {
       var form = document.querySelector('.analyse-bar form');
